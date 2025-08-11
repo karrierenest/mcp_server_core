@@ -46,6 +46,44 @@ export function createMcpHttpServer(options: CreateMcpHttpServerOptions) {
     });
   }
 
+  // One-time startup registration logging (without binding to a live transport)
+  if (logRegistrations) {
+    try {
+      const tempServer = new McpServer({ name: serverName, version: serverVersion });
+      const anyServer = tempServer as any;
+      if (typeof anyServer.registerTool === "function") {
+        const orig = anyServer.registerTool.bind(tempServer);
+        anyServer.registerTool = (name: string, def: any, handler: any) => {
+          console.log(`[MCP] Tool registered: ${name}`);
+          return orig(name, def, handler);
+        };
+      }
+      if (typeof anyServer.registerResource === "function") {
+        const origRes = anyServer.registerResource.bind(tempServer);
+        anyServer.registerResource = (name: string, template: any, meta: any, resolver: any) => {
+          console.log(`[MCP] Resource registered: ${name}`);
+          return origRes(name, template, meta, resolver);
+        };
+      }
+      if (typeof anyServer.registerPrompt === "function") {
+        const origPrompt = anyServer.registerPrompt.bind(tempServer);
+        anyServer.registerPrompt = (name: string, prompt: any) => {
+          console.log(`[MCP] Prompt registered: ${name}`);
+          return origPrompt(name, prompt);
+        };
+      }
+      // Support both sync/async register hooks without making outer function async
+      const maybePromise = register(tempServer);
+      if (maybePromise && typeof (maybePromise as any).then === "function") {
+        (maybePromise as Promise<void>).then(() => tempServer.close()).catch(() => tempServer.close());
+      } else {
+        tempServer.close();
+      }
+    } catch (e) {
+      console.warn("[MCP] Startup registration logging failed:", e);
+    }
+  }
+
   app.post("/mcp", async (req, res) => {
     try {
       const mcpServer = new McpServer({ name: serverName, version: serverVersion });
@@ -54,35 +92,6 @@ export function createMcpHttpServer(options: CreateMcpHttpServerOptions) {
         transport.close();
         mcpServer.close();
       });
-
-      if (logRegistrations) {
-        try {
-          const anyServer = mcpServer as any;
-          if (typeof anyServer.registerTool === "function") {
-            const orig = anyServer.registerTool.bind(mcpServer);
-            anyServer.registerTool = (name: string, def: any, handler: any) => {
-              console.log(`[MCP] Tool registered: ${name}`);
-              return orig(name, def, handler);
-            };
-          }
-          if (typeof anyServer.registerResource === "function") {
-            const origRes = anyServer.registerResource.bind(mcpServer);
-            anyServer.registerResource = (name: string, template: any, meta: any, resolver: any) => {
-              console.log(`[MCP] Resource registered: ${name}`);
-              return origRes(name, template, meta, resolver);
-            };
-          }
-          if (typeof anyServer.registerPrompt === "function") {
-            const origPrompt = anyServer.registerPrompt.bind(mcpServer);
-            anyServer.registerPrompt = (name: string, prompt: any) => {
-              console.log(`[MCP] Prompt registered: ${name}`);
-              return origPrompt(name, prompt);
-            };
-          }
-        } catch (e) {
-          console.warn("[MCP] Failed to enable registration logging:", e);
-        }
-      }
 
       await Promise.resolve(register(mcpServer));
       await mcpServer.connect(transport);
