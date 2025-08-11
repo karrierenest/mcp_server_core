@@ -57,7 +57,7 @@ export function createMcpHttpServer(options: CreateMcpHttpServerOptions) {
 
   // Authentication middleware
   if ((auth as any)?.type === "apiKey") {
-    const { headerName = "authorization", scheme = "Bearer", envVarName = "MCP_API_KEY", allowInQueryParam } = auth as Exclude<typeof auth, { type: "none" }>;
+    const { headerName = "authorization", scheme = "Bearer", envVarName = "mcp_api_key", allowInQueryParam } = auth as Exclude<typeof auth, { type: "none" }>;
     const expectedKey = process.env[envVarName];
     if (!expectedKey) {
       console.warn(`[MCP] API key auth enabled but env var '${envVarName}' is not set.`);
