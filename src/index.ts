@@ -12,11 +12,20 @@ export interface CreateMcpHttpServerOptions {
   bodyLimitMb?: number; // default 15
   enableCors?: boolean; // default true
   logRegistrations?: boolean; // default true
+  auth?:
+    | { type: "none" }
+    | {
+        type: "apiKey";
+        headerName?: string; // default: Authorization
+        scheme?: string; // default: Bearer
+        envVarName?: string; // default: MCP_API_KEY
+        allowInQueryParam?: string; // optional: e.g. "api_key" (discouraged)
+      };
   register: RegisterHooks; // register tools/resources/prompts
 }
 
 export function createMcpHttpServer(options: CreateMcpHttpServerOptions) {
-  const { serverName, serverVersion, port = 3000, bodyLimitMb = 15, enableCors = true, logRegistrations = true, register } = options;
+  const { serverName, serverVersion, port = 3000, bodyLimitMb = 15, enableCors = true, logRegistrations = true, auth = { type: "none" }, register } = options;
 
   const app = express();
   app.use(express.json({ limit: `${bodyLimitMb}mb` }));
@@ -42,6 +51,48 @@ export function createMcpHttpServer(options: CreateMcpHttpServerOptions) {
         res.sendStatus(200);
       } else {
         next();
+      }
+    });
+  }
+
+  // Authentication middleware
+  if ((auth as any)?.type === "apiKey") {
+    const { headerName = "authorization", scheme = "Bearer", envVarName = "MCP_API_KEY", allowInQueryParam } = auth as Exclude<typeof auth, { type: "none" }>;
+    const expectedKey = process.env[envVarName];
+    if (!expectedKey) {
+      console.warn(`[MCP] API key auth enabled but env var '${envVarName}' is not set.`);
+    }
+    app.use((req, res, next) => {
+      try {
+        const headerValue = req.headers[headerName.toLowerCase()] as string | undefined;
+        let provided: string | undefined;
+        if (headerValue) {
+          const parts = headerValue.split(" ");
+          if (parts.length === 2 && parts[0] === scheme && parts[1]) {
+            provided = parts[1];
+          }
+        }
+        if (!provided && allowInQueryParam && typeof req.query?.[allowInQueryParam] === "string") {
+          provided = String(req.query[allowInQueryParam]);
+        }
+        if (!expectedKey || !provided) {
+          return res.status(401).json({
+            jsonrpc: "2.0",
+            error: { code: -32010, message: "Unauthorized: Missing API key" },
+            id: null,
+          });
+        }
+        if (provided !== expectedKey) {
+          return res.status(403).json({
+            jsonrpc: "2.0",
+            error: { code: -32011, message: "Forbidden: Invalid API key" },
+            id: null,
+          });
+        }
+        return next();
+      } catch (e) {
+        console.error("[MCP] Auth middleware error:", e);
+        return res.status(500).json({ jsonrpc: "2.0", error: { code: -32603, message: "Internal server error" }, id: null });
       }
     });
   }
