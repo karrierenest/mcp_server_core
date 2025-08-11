@@ -11,11 +11,12 @@ export interface CreateMcpHttpServerOptions {
   port?: number; // default 3000
   bodyLimitMb?: number; // default 15
   enableCors?: boolean; // default true
+  logRegistrations?: boolean; // default true
   register: RegisterHooks; // register tools/resources/prompts
 }
 
 export function createMcpHttpServer(options: CreateMcpHttpServerOptions) {
-  const { serverName, serverVersion, port = 3000, bodyLimitMb = 15, enableCors = true, register } = options;
+  const { serverName, serverVersion, port = 3000, bodyLimitMb = 15, enableCors = true, logRegistrations = true, register } = options;
 
   const app = express();
   app.use(express.json({ limit: `${bodyLimitMb}mb` }));
@@ -54,6 +55,35 @@ export function createMcpHttpServer(options: CreateMcpHttpServerOptions) {
         mcpServer.close();
       });
 
+      if (logRegistrations) {
+        try {
+          const anyServer = mcpServer as any;
+          if (typeof anyServer.registerTool === "function") {
+            const orig = anyServer.registerTool.bind(mcpServer);
+            anyServer.registerTool = (name: string, def: any, handler: any) => {
+              console.log(`[MCP] Tool registered: ${name}`);
+              return orig(name, def, handler);
+            };
+          }
+          if (typeof anyServer.registerResource === "function") {
+            const origRes = anyServer.registerResource.bind(mcpServer);
+            anyServer.registerResource = (name: string, template: any, meta: any, resolver: any) => {
+              console.log(`[MCP] Resource registered: ${name}`);
+              return origRes(name, template, meta, resolver);
+            };
+          }
+          if (typeof anyServer.registerPrompt === "function") {
+            const origPrompt = anyServer.registerPrompt.bind(mcpServer);
+            anyServer.registerPrompt = (name: string, prompt: any) => {
+              console.log(`[MCP] Prompt registered: ${name}`);
+              return origPrompt(name, prompt);
+            };
+          }
+        } catch (e) {
+          console.warn("[MCP] Failed to enable registration logging:", e);
+        }
+      }
+
       await Promise.resolve(register(mcpServer));
       await mcpServer.connect(transport);
       await transport.handleRequest(req, res, req.body);
@@ -77,7 +107,7 @@ export function createMcpHttpServer(options: CreateMcpHttpServerOptions) {
       console.error("Failed to start server:", error);
       process.exit(1);
     }
-    console.log(`MCP Stateless Streamable HTTP Server listening on port ${port}`);
+    console.log(`MCP Stateless Streamable HTTP Server "${serverName}" listening on port ${port}`);
   });
 
   return { app, server };
