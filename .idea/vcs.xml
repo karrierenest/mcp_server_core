@@ -2,8 +2,5 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/../mcp_server_hr_geocoding" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/../mcp_server_job_application" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/../mcp_server_jobs_search" vcs="Git" />
   </component>
 </project>
