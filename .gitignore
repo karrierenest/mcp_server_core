@@ -8,3 +8,5 @@ coverage/
 # IntelliJ/JetBrains
 .idea/
 *.iml
+
+package-lock.json
